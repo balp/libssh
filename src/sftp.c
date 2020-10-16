@@ -2494,84 +2494,104 @@ int sftp_mkdir(sftp_session sftp, const char *directory, mode_t mode)
 
 /* code written by nick */
 int sftp_rename(sftp_session sftp, const char *original, const char *newname) {
-  sftp_status_message status = NULL;
-  sftp_message msg = NULL;
-  ssh_buffer buffer;
-  uint32_t id;
-  int rc;
+    sftp_status_message status = NULL;
+    sftp_message msg = NULL;
+    ssh_buffer buffer;
+    uint32_t id;
+    int rc;
+    int posix_rename;
 
-  buffer = ssh_buffer_new();
-  if (buffer == NULL) {
-    ssh_set_error_oom(sftp->session);
-    sftp_set_error(sftp, SSH_FX_FAILURE);
-    return -1;
-  }
-
-  id = sftp_get_new_id(sftp);
-
-  rc = ssh_buffer_pack(buffer,
-                       "dss",
-                       id,
-                       original,
-                       newname);
-  if (rc != SSH_OK) {
-    ssh_set_error_oom(sftp->session);
-    SSH_BUFFER_FREE(buffer);
-    sftp_set_error(sftp, SSH_FX_FAILURE);
-    return -1;
-  }
-
-  if (sftp->version >= 4){
-      /* POSIX rename atomically replaces newpath, we should do the same
-       * only available on >=v4 */
-      ssh_buffer_add_u32(buffer, SSH_FXF_RENAME_OVERWRITE);
-  }
-
-  if (sftp_packet_write(sftp, SSH_FXP_RENAME, buffer) < 0) {
-    SSH_BUFFER_FREE(buffer);
-    return -1;
-  }
-  SSH_BUFFER_FREE(buffer);
-
-  while (msg == NULL) {
-    if (sftp_read_and_dispatch(sftp) < 0) {
-      return -1;
+    buffer = ssh_buffer_new();
+    if (buffer == NULL) {
+        ssh_set_error_oom(sftp->session);
+        sftp_set_error(sftp, SSH_FX_FAILURE);
+        return -1;
     }
-    msg = sftp_dequeue(sftp, id);
-  }
 
-  /* By specification, this command only returns SSH_FXP_STATUS */
-  if (msg->packet_type == SSH_FXP_STATUS) {
-    status = parse_status_msg(msg);
-    sftp_message_free(msg);
-    if (status == NULL) {
-      return -1;
+    id = sftp_get_new_id(sftp);
+
+    // Do server support posix-rename@openssh.com
+    posix_rename = sftp_extension_supported(sftp, "posix-rename@openssh.com", "1");
+    if (posix_rename) {
+        rc = ssh_buffer_pack(buffer, "dsss", id, "posix-rename@openssh.com", original, newname);
+        if (rc < 0) {
+            SSH_LOG(SSH_LOG_FUNCTIONS,
+                    "ssh_buffer_pack posix-rename@openssh.com, %s %s --> %d", original, newname, rc);
+            return -1;
+        }
+        rc = sftp_packet_write(sftp, SSH_FXP_EXTENDED, buffer);
+        SSH_BUFFER_FREE(buffer);
+        if (rc < 0) {
+            SSH_LOG(SSH_LOG_FUNCTIONS, "sftp_packet_write %d", rc);
+            return -1;
+        }
+        SSH_LOG(SSH_LOG_FUNCTIONS, "Set posix rename");
+
+    } else {
+        rc = ssh_buffer_pack(buffer,
+                             "dss",
+                             id,
+                             original,
+                             newname);
+        if (rc != SSH_OK) {
+            ssh_set_error_oom(sftp->session);
+            SSH_BUFFER_FREE(buffer);
+            sftp_set_error(sftp, SSH_FX_FAILURE);
+            return -1;
+        }
+
+        if (sftp->version >= 4) {
+            /* POSIX rename atomically replaces newpath, we should do the same
+             * only available on >=v4 */
+            ssh_buffer_add_u32(buffer, SSH_FXF_RENAME_OVERWRITE);
+        }
+
+        if (sftp_packet_write(sftp, SSH_FXP_RENAME, buffer) < 0) {
+            SSH_BUFFER_FREE(buffer);
+            return -1;
+        }
     }
-    sftp_set_error(sftp, status->status);
-    switch (status->status) {
-      case SSH_FX_OK:
+    SSH_BUFFER_FREE(buffer);
+
+    while (msg == NULL) {
+        if (sftp_read_and_dispatch(sftp) < 0) {
+            return -1;
+        }
+        msg = sftp_dequeue(sftp, id);
+    }
+
+    /* By specification, this command only returns SSH_FXP_STATUS */
+    if (msg->packet_type == SSH_FXP_STATUS) {
+        status = parse_status_msg(msg);
+        sftp_message_free(msg);
+        if (status == NULL) {
+            return -1;
+        }
+        sftp_set_error(sftp, status->status);
+        switch (status->status) {
+            case SSH_FX_OK:
+                status_msg_free(status);
+                return 0;
+            default:
+                break;
+        }
+        /*
+         * Status should be SSH_FX_OK if the command was successful, if it didn't,
+         * then there was an error
+         */
+        ssh_set_error(sftp->session, SSH_REQUEST_DENIED,
+                      "SFTP server: %s", status->errormsg);
         status_msg_free(status);
-        return 0;
-      default:
-        break;
+        return -1;
+    } else {
+        ssh_set_error(sftp->session, SSH_FATAL,
+                      "Received message %d when attempting to rename",
+                      msg->packet_type);
+        sftp_message_free(msg);
+        sftp_set_error(sftp, SSH_FX_BAD_MESSAGE);
     }
-    /*
-     * Status should be SSH_FX_OK if the command was successful, if it didn't,
-     * then there was an error
-     */
-    ssh_set_error(sftp->session, SSH_REQUEST_DENIED,
-        "SFTP server: %s", status->errormsg);
-    status_msg_free(status);
-    return -1;
-  } else {
-    ssh_set_error(sftp->session, SSH_FATAL,
-        "Received message %d when attempting to rename",
-        msg->packet_type);
-    sftp_message_free(msg);
-    sftp_set_error(sftp, SSH_FX_BAD_MESSAGE);
-  }
 
-  return -1;
+    return -1;
 }
 
 /* Code written by Nick */
