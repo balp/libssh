@@ -2304,6 +2304,7 @@ int sftp_rename(sftp_session sftp, const char *original, const char *newname) {
   ssh_buffer buffer;
   uint32_t id;
   int rc;
+    int posix_rename;
 
   buffer = ssh_buffer_new();
   if (buffer == NULL) {
@@ -2313,26 +2314,44 @@ int sftp_rename(sftp_session sftp, const char *original, const char *newname) {
 
   id = sftp_get_new_id(sftp);
 
-  rc = ssh_buffer_pack(buffer,
-                       "dss",
-                       id,
-                       original,
-                       newname);
-  if (rc != SSH_OK) {
-    ssh_set_error_oom(sftp->session);
+  // Do server support posix-rename@openssh.com
+  posix_rename = sftp_extension_supported(sftp, "posix-rename@openssh.com", "1");
+  if (posix_rename) {
+    rc = ssh_buffer_pack(buffer, "dsss", id, "posix-rename@openssh.com", original, newname);
+    if (rc < 0) {
+      SSH_LOG(SSH_LOG_FUNCTIONS,
+              "ssh_buffer_pack posix-rename@openssh.com, %s %s --> %d", original, newname, rc);
+      return -1;
+    }
+    rc = sftp_packet_write(sftp, SSH_FXP_EXTENDED, buffer);
     ssh_buffer_free(buffer);
-    return -1;
-  }
+    if (rc < 0) {
+      SSH_LOG(SSH_LOG_FUNCTIONS, "sftp_packet_write %d", rc);
+      return -1;
+    }
+    SSH_LOG(SSH_LOG_FUNCTIONS, "Set posix rename");
+  } else {
+    rc = ssh_buffer_pack(buffer,
+                         "dss",
+                         id,
+                         original,
+                         newname);
+    if (rc != SSH_OK) {
+      ssh_set_error_oom(sftp->session);
+      ssh_buffer_free(buffer);
+      return -1;
+    }
 
-  if (sftp->version >= 4){
+    if (sftp->version >= 4) {
       /* POSIX rename atomically replaces newpath, we should do the same
        * only available on >=v4 */
       buffer_add_u32(buffer, SSH_FXF_RENAME_OVERWRITE);
-  }
+    }
 
-  if (sftp_packet_write(sftp, SSH_FXP_RENAME, buffer) < 0) {
-    ssh_buffer_free(buffer);
-    return -1;
+    if (sftp_packet_write(sftp, SSH_FXP_RENAME, buffer) < 0) {
+      ssh_buffer_free(buffer);
+      return -1;
+    }
   }
   ssh_buffer_free(buffer);
 
