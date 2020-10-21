@@ -77,6 +77,7 @@ endif (WITH_NACL)
 # config.h checks
 include(ConfigureChecks.cmake)
 configure_file(config.h.cmake ${CMAKE_CURRENT_BINARY_DIR}/config.h)
+include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
 # check subdirectories
 add_subdirectory(doc)
