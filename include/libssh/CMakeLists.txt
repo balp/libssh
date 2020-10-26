@@ -29,6 +29,7 @@ if (WITH_SERVER)
   )
 endif (WITH_SERVER)
 
+message(STATUS "Install headers: ... --> ${INCLUDE_INSTALL_DIR}/${APPLICATION_NAME} ")
 install(
   FILES
     ${libssh_HDRS}

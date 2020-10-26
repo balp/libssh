@@ -250,7 +250,7 @@ if (MINGW)
     set_target_properties(${LIBSSH_SHARED_LIBRARY} PROPERTIES LINK_FLAGS "-Wl,--enable-stdcall-fixup")
 endif ()
 
-
+message(STATUS "Install ${LIBSSH_SHARED_LIBRARY} --> ${BIN_INSTALL_DIR} :: ${LIB_INSTALL_DIR}")
 install(
   TARGETS
     ${LIBSSH_SHARED_LIBRARY}
