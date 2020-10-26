@@ -10,11 +10,11 @@ if (UNIX OR OS2)
   )
 
   SET(EXEC_INSTALL_PREFIX
-    "${CMAKE_INSTALL_PREFIX}"
+    "ssh"
     CACHE PATH  "Base directory for executables and libraries"
   )
   SET(SHARE_INSTALL_PREFIX
-    "${CMAKE_INSTALL_PREFIX}/share"
+    "ssh/share"
     CACHE PATH "Base directory for files which go to share/"
   )
   SET(DATA_INSTALL_PREFIX
