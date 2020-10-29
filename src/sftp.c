@@ -2352,8 +2352,8 @@ int sftp_rename(sftp_session sftp, const char *original, const char *newname) {
       ssh_buffer_free(buffer);
       return -1;
     }
+    ssh_buffer_free(buffer);
   }
-  ssh_buffer_free(buffer);
 
   while (msg == NULL) {
     if (sftp_read_and_dispatch(sftp) < 0) {
